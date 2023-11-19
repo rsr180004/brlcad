@@ -663,6 +663,7 @@ int main(int argc, char *argv[])
     const char * null_title = NULL;
     const char * null_object = NULL;
 	frame_retval = do_frame(curframe, -1, null_title, null_object);
+
 	if (frame_retval != 0) {
 	    /* Release the framebuffer, if any */
 	    if (fbp != FB_NULL) {

@@ -764,14 +764,13 @@ void
 do_run(int a, int b, const char* db_name, NeuralRayTracer * nrt, int neural_training, struct application *ap_temp)
 {
     if(neural_training == 1) {
-        // training_flag = 1;
         global_ap = ap_temp;
     }
 
     // Set global variables for worker
     database_name = db_name;
     global_nrt = nrt;
-    
+
     cur_pixel = a;
     last_pixel = b;
 

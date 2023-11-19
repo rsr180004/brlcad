@@ -142,7 +142,7 @@ old_way(FILE *fp)
     }
     if (ungetc(c, fp) != c)
 	bu_exit(EXIT_FAILURE, "do.c:old_way() ungetc failure\n");
-
+ 
     /*
      * Old format files start immediately with a %.9e format, so the
      * very first character should be a digit or '-'.
@@ -816,6 +816,7 @@ validate_raytrace(struct rt_i *rtip)
 int
 do_frame(int framenumber, int neural_training, const char *title_file, const char *object_title)
 {
+
     struct bu_vls times = BU_VLS_INIT_ZERO;
     char framename[128] = {0};		/* File name to hold current frame */
     struct rt_i *rtip = APP.a_rt_i;
@@ -833,18 +834,9 @@ do_frame(int framenumber, int neural_training, const char *title_file, const cha
     It is used to pass the name of the model path to the NRT instance (so 
     it knows where to load the model weights). */
     if(neural_rendering == 1) {
-
-        const char * temp_db_name;
         
         if (rtip && rtip->rti_dbip) {
-            temp_db_name = rtip->rti_dbip->dbi_filename;
-        }
-
-        const char* substring = "brlcad/build/";
-        char* location = strstr(temp_db_name, substring);
-        
-        if (location != NULL) {
-            db_name = location + strlen(substring); // Move the pointer past the substring
+            db_name = rtip->rti_dbip->dbi_filename;
         }
 
         char object_name[256];
@@ -877,7 +869,6 @@ do_frame(int framenumber, int neural_training, const char *title_file, const cha
             printf("Error: File path too long or an error occurred\n");
             return -1;  // or handle the error appropriately
         }
-        
 
         FILE *file = fopen(filepath, "r");
         if (!file) {
@@ -936,7 +927,6 @@ do_frame(int framenumber, int neural_training, const char *title_file, const cha
 
         // Convert it to const char*
         model_path_str = model_p;
-
 
         // Create instance of Neural Ray Tracer (will be passed to do run)
         NRTInstance = NeuralRayTracer_Create(model_path_str);
