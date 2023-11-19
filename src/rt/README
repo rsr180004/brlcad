@@ -1,0 +1,36 @@
+# README
+# External dependencies
+
+The first step is to download the following external dependencies. 
+- Python (version 3.9.6)
+- PyTorch
+- TorchVision
+- Numpy
+- scikit-learn
+
+
+The next step of the process is to load some geometry into the build directory which the user created during the compilation process! There is a folder in the “brlcad” directory called “example_geometry”. In this folder, there are three pieces of example geometry. Copy one of these files and paste it at the root of the “build” directory within the “brlcad” folder (brlcad > build). 
+
+Now, it is time to train the neural network. You should open up a terminal window and navigate to the build directory. From here, you should enter a command in the following form:
+
+“bin/rt_trainneural <database_name> <object_name>”
+
+For the example geometry provided, the commands are:
+
+“bin/rt_trainneural sphere.g default.1.3.b.c.s”
+“bin/rt_trainneural tinker.g group_0_30377.2.1.b.o.s”
+“bin/rt_trainneural torus.g Torus.001_Torus.001.2.3.b.c.s”
+
+If you want to retrain the neural network, you should simply delete the file from the “build > model_weights” directory and run the command again.
+
+Once the system has finished training the neural network, it will inform you. Now it is time to perform a neural rendering! For the purposes of this UAT, these neural renderings are being performed from a specific perspective. Depending on which geometry you have chosen to train the model on, choose the correct respective command below: 
+
+“bin/rt -a 90 -e 0 -Z yes sphere.g default.1.3.b.c.s”
+“bin/rt -a 90 -e 0 -Z yes tinker.g group_0_30377.2.1.b.o.s”
+“bin/rt -a 90 -e 0 -Z yes torus.g Torus.001_Torus.001.2.3.b.c.s”
+
+Once the system has completed execution, you can successfully exit out of the window. You may try again on the other pieces of example geometry. Now that you have seen the neural rendering, please run a traditional ray trace command on the same piece of geometry (from the same perspective), to get a comparison of the shape. The commands are:
+
+“bin/rt -a 90 -e 0 sphere.g default.1.3.b.c.s”
+“bin/rt -a 90 -e 0 tinker.g group_0_30377.2.1.b.o.s”
+“bin/rt -a 90 -e 0 torus.g Torus.001_Torus.001.2.3.b.c.s”
