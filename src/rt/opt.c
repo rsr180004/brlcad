@@ -66,6 +66,8 @@ int output_is_binary = 1;        /* !0 means output file is binary */
 
 /***** end of sharing with viewing model *****/
 
+int neural_rendering = 0;
+
 /***** variables shared with worker() ******/
 int query_x = 0;
 int query_y = 0;
@@ -124,6 +126,7 @@ int finalframe = -1;                    /* frame to halt at */
 int curframe = 0;                       /* current frame number,
 					 * also shared with view.c */
 char *outputfile = (char *)NULL;        /* name of base of output file */
+char * neural_yes = (char *)NULL;
 int benchmark = 0;                      /* No random numbers:  benchmark */
 
 int sub_grid_mode = 0;                  /* mode to raytrace a rectangular portion of view */
@@ -209,9 +212,10 @@ get_args(int argc, const char *argv[])
     struct bu_vls oline = BU_VLS_INIT_ZERO;
     int oid = 0;
     bu_optind = 1;                /* restart */
+    neural_rendering = 0; // Default value
 
 #define GETOPT_STR	\
-    ".:, :@:a:b:c:d:e:f:g:m:ij:k:l:n:o:p:q:rs:tu:v::w:x:z:A:BC:D:E:F:G:H:I:J:K:MN:O:P:Q:RST:U:V:WX:!:+:h?"
+    ".:, :@:a:b:c:d:e:f:g:m:ij:k:l:n:o:p:q:rs:tu:v::w:x:z:A:BC:D:E:F:G:H:I:J:K:MN:O:P:Q:RST:U:V:WX:!:+:Z:h?"
 
     while ((c=bu_getopt(argc, (char * const *)argv, GETOPT_STR)) != -1) {
 	if (bu_optopt == '?')
@@ -627,6 +631,16 @@ get_args(int argc, const char *argv[])
 		    }
 		}
 		break;
+        case 'Z':
+        {
+            
+            // Set some flag to indicate neural rendering
+             if (strstr(bu_optarg, "y") != NULL || strstr(bu_optarg, "Y") != NULL) {
+                printf("DOING NEURAL RENDERING\n");
+                neural_rendering = 1;
+            }
+        }
+        break;
 	    case 'h':
 		/* asking for help */
 		return 0;

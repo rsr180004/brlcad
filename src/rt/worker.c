@@ -38,6 +38,8 @@
 
 #include "./rtuif.h"
 #include "./ext.h"
+#include "NeuralRayTracer.h"
+#include <stdio.h>
 
 
 /* for fork/pipe linux timing hack */
@@ -49,7 +51,7 @@
 #  endif
 #endif
 
-
+#define PI 3.14159265358979323846
 #define CRT_BLEND(v)	(0.26*(v)[X] + 0.66*(v)[Y] + 0.08*(v)[Z])
 #define NTSC_BLEND(v)	(0.30*(v)[X] + 0.59*(v)[Y] + 0.11*(v)[Z])
 
@@ -78,6 +80,41 @@ int cur_pixel = 0;			/* current pixel number, 0..last_pixel */
 int last_pixel = 0;			/* last pixel number */
 
 int stop_worker = 0;
+
+const char *database_name;
+NeuralRayTracer * global_nrt;
+struct application * global_ap;
+
+
+// Convert degrees to radians
+double degrees_to_radians(double degrees) {
+    return degrees * (PI / 180.0);
+}
+
+// Normalize azimuth to be within [0, 2π] radians
+double normalize_azimuth(double azimuth) {
+    azimuth = fmod(azimuth, 360.0); // Modulo to keep within [0, 360]
+    if (azimuth < 0) {
+        azimuth += 360.0; // Fix negative values
+    }
+
+    if(azimuth < 0 || azimuth > 360) {
+        printf("AZIMUTH IS OUT OF BOUNDS\n");
+    }
+    return degrees_to_radians(azimuth);
+}
+
+// Normalize elevation to be within [-π/2, π/2] radians
+double normalize_elevation(double elevation) {
+
+    // Assuming elevation is always provided within [-90, 90]
+    if(elevation < -90) {
+        elevation = -90.0;
+    } else if (elevation > 90.0) {
+        elevation = 90.0;
+    }
+    return degrees_to_radians(elevation);
+}
 
 /**
  * For certain hypersample values there is a particular advantage to
@@ -147,6 +184,50 @@ jitter_start_pnt(vect_t point, struct application *a, int samplenum, int pat_num
     VJOIN2(point, viewbase_model, dx, dx_model, dy, dy_model);
 }
 
+
+int roundToNearest90_az(int value) {
+    // Normalize value to be within [0, 360)
+    value = value % 360;
+    if (value < 0) {
+        value += 360;
+    }
+
+    // Determine the nearest multiple of 90
+    int quotient = value / 90;
+    int remainder = value % 90;
+
+    // Round to the nearest multiple
+    if (remainder < 45) {
+        value = quotient * 90;
+    } else {
+        value = (quotient + 1) * 90;
+    }
+
+    // Normalize again in case we have rounded to 360
+    value = value % 360;
+
+    return value;
+}
+int roundToNearest90_el(int value) {
+    // The value is already one of the possible outcomes
+    if (value == 0 || value == 90 || value == -90) {
+        return value;
+    }
+
+    // Find the distance to -90, 0, and 90
+    int distanceToMinus90 = abs(value + 90);
+    int distanceToZero = abs(value);
+    int distanceTo90 = abs(value - 90);
+
+    // Determine the closest distance
+    if (distanceToZero <= distanceTo90 && distanceToZero <= distanceToMinus90) {
+        return 0;
+    } else if (distanceTo90 < distanceToZero && distanceTo90 <= distanceToMinus90) {
+        return 90;
+    } else {
+        return -90;
+    }
+}
 
 void
 do_pixel(int cpu, int pat_num, int pixelnum)
@@ -300,7 +381,101 @@ do_pixel(int cpu, int pat_num, int pixelnum)
 
 	a.a_level = 0;		/* recursion level */
 	a.a_purpose = "main ray";
-	(void)rt_shootray(&a);
+    // Traditional raytrace
+    if(neural_rendering != 1) {
+        (void)rt_shootray(&a); // This is the call to rt_shootray we need to edit
+    }
+    else {  // Doing neural rendering
+
+        double ray_origin[3];
+        double ray_dir[3];
+        double model_output[1];
+ 
+        // Store ray origin and direction
+        for(int i = 0; i < 3; i++) {
+            ray_origin[i] = (double) a.a_ray.r_pt[i];
+            ray_dir[i] = (double) a.a_ray.r_dir[i];
+            
+        }
+
+        // convert direction to azimuth and elevation
+        fastf_t azp;
+        fastf_t elp;
+
+        bn_ae_vec(&azp, &elp, a.a_ray.r_dir);
+
+        double az_el_vec[2];
+
+        // Normalize az el
+        az_el_vec[0] = (double) azp / 36.0;
+        az_el_vec[1] = (double) elp / 9.0;
+
+        // Call NRT shoot ray to pass data through model
+        NeuralRayTracer_ShootRay(global_nrt, ray_origin, az_el_vec, model_output);
+
+        double hit_or_miss = model_output[0];
+
+
+        // Ray miss
+        if (hit_or_miss < .99) {
+
+           a.a_return = 0;
+           a.a_miss(&a);
+
+           a.a_color[0] = 0;
+           a.a_color[1] = 0;
+           a.a_color[2] = 0;
+
+        } else {
+
+            a.a_color[0] = 0.5;
+            a.a_color[1] = 0.5;
+            a.a_color[2] = 0.5;
+
+            /*
+
+            ----- CODE FOR SHADING MODEL---
+
+            double dist_az_el[3];
+
+            NeuralRayTracer_GetShading(global_nrt, ray_origin, az_el_vec, dist_az_el);
+
+            double normal_vector_az = (dist_az_el[1] * 36.0) + 180;
+            double normal_vector_el = dist_az_el[2] * 9.0;
+
+            normal_vector_az = roundToNearest90_az(normal_vector_az);
+            normal_vector_el = roundToNearest90_el(normal_vector_el);
+
+            double point_az_rad = normalize_azimuth(normal_vector_az);
+            double point_el_rad = normalize_elevation(normal_vector_el);
+            double light_az_rad = normalize_azimuth((double)azp);
+            double light_el_rad = normalize_elevation((double)elp * -1);
+
+            // Convert spherical coordinates to Cartesian coordinates for the normal vector
+            double nx = cos(point_el_rad) * cos(point_az_rad);
+            double ny = cos(point_el_rad) * sin(point_az_rad);
+            double nz = sin(point_el_rad);
+
+            // Convert spherical coordinates to Cartesian coordinates for the light direction
+            double lx = cos(light_el_rad) * cos(light_az_rad);
+            double ly = cos(light_el_rad) * sin(light_az_rad);
+            double lz = sin(light_el_rad);
+
+            // Dot product between normal and light direction vectors
+            double intensity = nx * lx + ny * ly + nz * lz;
+
+            // Clamp intensity to the [0, 1] range
+            intensity = fmax(0, intensity); // No negative values
+            intensity = fmin(1, intensity); // No values greater than 1
+
+            intensity = round(intensity * 10.0) / 10.0;
+
+            a.a_color[0] = intensity; // Red component
+            a.a_color[1] = intensity; // Green component
+            a.a_color[2] = intensity; // Blue component
+            */
+        }
+    }
 
 	if (stereo) {
 	    fastf_t right, left;
@@ -586,8 +761,17 @@ pat_found:
  * Compute a run of pixels, in parallel if the hardware permits it.
  */
 void
-do_run(int a, int b)
+do_run(int a, int b, const char* db_name, NeuralRayTracer * nrt, int neural_training, struct application *ap_temp)
 {
+    if(neural_training == 1) {
+        // training_flag = 1;
+        global_ap = ap_temp;
+    }
+
+    // Set global variables for worker
+    database_name = db_name;
+    global_nrt = nrt;
+    
     cur_pixel = a;
     last_pixel = b;
 

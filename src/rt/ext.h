@@ -30,6 +30,7 @@
 #include "dm.h"
 #include "bu/parallel.h" /* for MAX_PSW */
 #include "bu/ptbl.h"
+#include "NeuralRayTracer.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -161,13 +162,15 @@ extern int pix_end;			/* pixel to end at */
 extern int pix_start;			/* pixel to start at */
 /***** end variables shared with do.c *****/
 
+extern int neural_rendering;
+
 /*** do.c ***/
 extern void def_tree(struct rt_i *rtip);
 extern void do_prep(struct rt_i *rtip);
-extern void do_run(int a, int b);
+extern void do_run(int a, int b, const char * db_name, NeuralRayTracer * nrt, int neural_training, struct application *ap_temp); 
 extern void do_ae(double azim, double elev);
 extern int old_way(FILE *fp);
-extern int do_frame(int framenumber);
+extern int do_frame(int framenumber, int neural_training, const char * title_file, const char * object_title);
 
 #ifdef USE_OPENCL
 enum {

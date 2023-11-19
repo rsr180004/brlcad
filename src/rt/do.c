@@ -52,6 +52,12 @@
 
 #include "./rtuif.h"
 #include "./ext.h"
+#include "NeuralRayTracer.h"
+#include <stdio.h>
+#include <dirent.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 #if defined(HAVE_FDOPEN) && !defined(HAVE_DECL_FDOPEN)
 extern FILE *fdopen(int fd, const char *mode);
@@ -157,13 +163,15 @@ old_way(FILE *fp)
     }
 
     def_tree(APP.a_rt_i);	/* Load the default trees */
+    const char * null_title = NULL;
+    const char * null_object = NULL;
 
     curframe = 0;
     do {
 	if (finalframe >= 0 && curframe > finalframe)
 	    return 1;
 	if (curframe >= desiredframe)
-	    do_frame(curframe);
+	    do_frame(curframe, -1, null_title, null_object);
 	curframe++;
     }  while (old_frame(fp) >= 0 && viewsize > 0.0);
     return 1;			/* old way, all done */
@@ -312,8 +320,9 @@ int cm_end(const int UNUSED(argc), const char **UNUSED(argv))
     /* If no matrix or az/el specified yet, use params from cmd line */
     if (Viewrotscale[15] <= 0.0)
 	do_ae(azimuth, elevation);
-
-    if (do_frame(curframe) < 0)
+    const char * null_title = NULL;
+    const char * null_object = NULL;
+    if (do_frame(curframe, -1, null_title, null_object) < 0)
 	return -1;
     return 0;
 }
@@ -433,7 +442,9 @@ int cm_multiview(const int UNUSED(argc), const char **UNUSED(argv))
     }
     for (i = 0; i < (sizeof(a)/sizeof(a[0])); i++) {
 	do_ae((double)a[i], (double)e[i]);
-	(void)do_frame(curframe++);
+    const char * null_title = NULL;
+    const char * null_object = NULL;
+	(void)do_frame(curframe++, -1, null_title, null_object);
     }
     return -1;	/* end RT by returning an error */
 }
@@ -803,7 +814,7 @@ validate_raytrace(struct rt_i *rtip)
  * Returns -1 on error, 0 if OK.
  */
 int
-do_frame(int framenumber)
+do_frame(int framenumber, int neural_training, const char *title_file, const char *object_title)
 {
     struct bu_vls times = BU_VLS_INIT_ZERO;
     char framename[128] = {0};		/* File name to hold current frame */
@@ -813,6 +824,126 @@ do_frame(int framenumber)
     double wallclock = 0.0;		/* # seconds of wall clock time */
     vect_t work, temp;
     quat_t quat;
+    char * db_name = NULL;
+    const char* model_path_str;
+    NeuralRayTracer * NRTInstance = NULL;
+    struct application ap;
+
+     /* If doing neural rendering, read object name from IPC via file. 
+    It is used to pass the name of the model path to the NRT instance (so 
+    it knows where to load the model weights). */
+    if(neural_rendering == 1) {
+
+        const char * temp_db_name;
+        
+        if (rtip && rtip->rti_dbip) {
+            temp_db_name = rtip->rti_dbip->dbi_filename;
+        }
+
+        const char* substring = "brlcad/build/";
+        char* location = strstr(temp_db_name, substring);
+        
+        if (location != NULL) {
+            db_name = location + strlen(substring); // Move the pointer past the substring
+        }
+
+        char object_name[256];
+
+        // Step 1: Read the file contents
+        char filepath[256];
+        int dbNameLength = strlen(db_name);
+
+        // Ensure db_name has more than 2 characters
+        if (dbNameLength <= 2) {
+            printf("Error: db_name is too short\n");
+            return -1;  // or handle the error appropriately
+        }
+
+        // Create a copy of db_name and replace '/' with '_'
+        char dbNameModified[dbNameLength + 1];  // +1 for null terminator
+        strcpy(dbNameModified, db_name);
+
+        for (int i = 0; i < dbNameLength; i++) {
+            if (dbNameModified[i] == '/') {
+                dbNameModified[i] = '_';
+            }
+        }
+
+        // Use snprintf to format the string
+        int bytesWritten = snprintf(filepath, sizeof(filepath), "db_obj/%.*s.txt", dbNameLength - 2, dbNameModified);
+
+        // Check if the formatted string was truncated
+        if (bytesWritten >= sizeof(filepath) || bytesWritten < 0) {
+            printf("Error: File path too long or an error occurred\n");
+            return -1;  // or handle the error appropriately
+        }
+        
+
+        FILE *file = fopen(filepath, "r");
+        if (!file) {
+            perror("Error opening the file");
+            return -1;
+        }
+
+
+        // Read the file content into object_name
+        if (fgets(object_name, sizeof(object_name), file) == NULL) {
+            perror("Error reading the file");
+            fclose(file);
+            return -1;
+        }
+
+        fclose(file);
+
+        // Step 2: Delete all files in the "db_obj" folder
+        DIR *dir;
+        struct dirent *entry;
+        char file_to_delete[256];
+
+        dir = opendir("db_obj");
+        if (dir == NULL) {
+            perror("Error opening directory");
+            return -1;
+        }
+
+        while ((entry = readdir(dir)) != NULL) {
+            // Don't delete "." and ".."
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+                continue;
+
+            snprintf(file_to_delete, sizeof(file_to_delete), "db_obj/%s", entry->d_name);
+            if (unlink(file_to_delete) == -1) {
+                perror("Error deleting a file");
+                closedir(dir);
+                return -1;
+            }
+        }
+
+        closedir(dir);
+
+        // Step 3: Delete the "db_obj" directory
+        if (rmdir("db_obj") == -1) {
+            perror("Error deleting the directory");
+            return -1;
+        }
+ 
+        // Calculate the total length required
+        int totalLength = dbNameLength + strlen(object_name);
+
+        char model_p[totalLength + 10];
+
+        bytesWritten = snprintf(model_p, totalLength, "%.*s_%s", dbNameLength - 2, db_name, object_name);
+
+        // Convert it to const char*
+        model_path_str = model_p;
+
+
+        // Create instance of Neural Ray Tracer (will be passed to do run)
+        NRTInstance = NeuralRayTracer_Create(model_path_str);
+
+    }
+
+    rtip = APP.a_rt_i;
 
     if (rt_verbosity & VERBOSE_FRAMENUMBER)
 	bu_log("\n...................Frame %5d...................\n",
@@ -1086,7 +1217,7 @@ do_frame(int framenumber)
 	    if (incr_level > 1)
 		view_2init(&APP, framename);
 
-	    do_run(0, (1<<incr_level)*(1<<incr_level)-1);
+	    do_run(0, (1<<incr_level)*(1<<incr_level)-1, db_name, NRTInstance, neural_training, NULL);
 	}
     }
     else if (full_incr_mode) {
@@ -1095,11 +1226,11 @@ do_frame(int framenumber)
 	    full_incr_sample++) {
 	    if (full_incr_sample > 1) /* first sample was already initialized */
 		view_2init(&APP, framename);
-	    do_run(pix_start, pix_end);
+	    do_run(pix_start, pix_end, db_name, NRTInstance, neural_training, NULL);
 	}
     }
     else {
-	do_run(pix_start, pix_end);
+	do_run(pix_start, pix_end, db_name, NRTInstance, neural_training, NULL);
 
 	/* Reset values to full size, for next frame (if any) */
 	pix_start = 0;
@@ -1112,6 +1243,11 @@ do_frame(int framenumber)
      * Typically, writes any remaining results out.
      */
     view_end(&APP);
+
+    // Call function at end to free
+    if(neural_rendering == 1) {
+        NeuralRayTracer_Destroy(NRTInstance);
+    }
 
     /* These results need to be normalized.  Otherwise, all we would
      * know is that a given workload takes about the same amount of
