@@ -752,7 +752,7 @@ ph_lines(struct pkg_conn *UNUSED(pc), char *buf)
     info.li_frame = fr;
 
     rt_prep_timer();
-    do_run(a, b);
+    do_run(a, b, NULL, NULL, -1, NULL);
     info.li_nrays = rtip->rti_nrays;
     info.li_cpusec = rt_read_timer((char *)0, 0);
     info.li_percent = 42.0;	/* for now */
