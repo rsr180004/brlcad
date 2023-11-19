@@ -60,10 +60,17 @@
 #include "dm.h"
 #include "pkg.h"
 
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <stdio.h>
+
 /* private */
 #include "./rtuif.h"
 #include "./ext.h"
 #include "brlcad_ident.h"
+
+
 
 
 extern void application_init(void);
@@ -449,6 +456,54 @@ int main(int argc, char *argv[])
 
     title_file = argv[bu_optind];
     title_obj = argv[bu_optind+1];
+
+    if(neural_rendering == 1) {
+
+        // Set flag for neural renderings
+        APP.a_user = 1;
+
+        char fullpath[256];
+
+        const char *temp_folder_name = "db_obj";
+        if (mkdir(temp_folder_name, 0777) == -1) {
+            perror("Error creating temp directory in main.c");
+        }
+
+        char modified_title[256];  // Adjust size if needed
+        strcpy(modified_title, title_file);  // Start with a direct copy
+
+        // Replace every '/' with '_'
+        for (int i = 0; i < strlen(modified_title); i++) {
+            if (modified_title[i] == '/') {
+                modified_title[i] = '_';
+            }
+        }
+
+        int title_file_length = strlen(modified_title);
+        if (title_file_length > 2) { // Ensure title_file has at least two characters to remove
+            modified_title[title_file_length - 2] = '\0';  // Null terminate the string before the last 2 chars
+            strcat(modified_title, ".txt");  // Append .txt
+            // Create a file inside the directory using the modified title
+            snprintf(fullpath, sizeof(fullpath), "%s/%s", temp_folder_name, modified_title);
+        } else {
+            // In case title_file has 2 or fewer characters, handle accordingly (e.g., use the original title or assign a default name)
+            snprintf(fullpath, sizeof(fullpath), "%s/%s", temp_folder_name, title_file);
+        }
+
+        FILE *file = fopen(fullpath, "w");
+        if (file == NULL) {
+            perror("Error opening file for writing");
+            return 1;
+        }
+
+        // Write to the file
+        fprintf(file, "%s", title_obj);
+
+        // Close the file
+        fclose(file);
+
+    }
+    
     if (!objv) {
 	objc = argc - bu_optind - 1;
 	if (objc) {
@@ -605,7 +660,9 @@ int main(int argc, char *argv[])
 	    }
 	}
 
-	frame_retval = do_frame(curframe);
+    const char * null_title = NULL;
+    const char * null_object = NULL;
+	frame_retval = do_frame(curframe, -1, null_title, null_object);
 	if (frame_retval != 0) {
 	    /* Release the framebuffer, if any */
 	    if (fbp != FB_NULL) {
